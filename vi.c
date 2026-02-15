@@ -1,29 +1,21 @@
-/* vi: set sw=4 ts=4: */
-/*
- * tiny vi.c: A small 'vi' clone
- * Copyright (C) 2000, 2001 Sterling Huxley <sterling@europa.com>
- *
- * Licensed under the GPL v2 or later, see the file LICENSE in this tarball.
- * Revised:  4/23/20 brent@mbari.org -- NULL ptr deref on missing previous regex
- * Revised:	 5/21/20 brent@mbari.org -- extensive rework
- * Revised:	 2/14/24 Stefan Haubental -- added support for clang
- */
-
-/*
- * Things To Do:
- *	EXINIT
- *	$HOME/.exrc  and  ./.exrc
- *	add magic to search	/foo.*bar
- *	add :help command
- *	:map macros
- *	if mark[] values were line numbers rather than pointers
- *	   it would be easier to change the mark when add/delete lines
- *	More intelligence in refresh()
- *	":r !cmd"  and  "!cmd"  to filter text through an external command
- *	A true "undo" facility
- *	An "ex" line oriented mode- maybe using "cmdedit"
- */
- 
+#include <limits.h>
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <termios.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <poll.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <ctype.h>
+#include <time.h>
 #define STANDALONE
 
 
@@ -83,7 +75,7 @@ typedef signed char smallint;
 // while in the editor Ctrl-T will toggle the crashme function on and off.
 //#define CONFIG_FEATURE_VI_CRASHME		// randomly pick commands to execute
 
-#ifdef __clang__
+// #ifdef __clang__
 char *strchrnul(const char *s, int c_in)
 {
         char c = c_in;
@@ -104,7 +96,7 @@ void *memrchr(const void *s, int c_in, size_t n)
         }
         return NULL;
 }
-#endif
+// #endif
 
 #else  //in busybox
 
@@ -789,7 +781,7 @@ int vi_main(int argc, char **argv)
 	{
 		char *p = getenv("EXINIT");
 		if (p && *p)
-			initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
+			initial_cmds[0] = strndup(p, MAX_INPUT_LEN);
 	}
 #endif
 	while ((c = getopt(argc, argv, "hCRH-" USE_FEATURE_VI_COLON("c:"))) != -1) {
@@ -807,7 +799,7 @@ int vi_main(int argc, char **argv)
 #if ENABLE_FEATURE_VI_COLON
 		case 'c':		// cmd line vi command
 			if (*optarg)
-				initial_cmds[initial_cmds[0] != 0] = xstrndup(optarg, MAX_INPUT_LEN);
+				initial_cmds[initial_cmds[0] != 0] = strndup(optarg, MAX_INPUT_LEN);
 			break;
 #endif
 		case 'H':
@@ -852,7 +844,7 @@ static int init_text_buffer(char *fn)
 
 	if (fn != current_filename) {
 		free(current_filename);
-		current_filename = xstrdup(fn);
+		current_filename = strdup(fn);
 	}
 	if (size < 0) {
 		// file dont exist. Start empty buf with dummy line
@@ -1022,7 +1014,7 @@ static char *get_one_address(char *p, int *addr)	// get colon addr, if present
 #if ENABLE_FEATURE_VI_SEARCH
 	else if (*p == '/') {	// a search pattern
 		q = strchrnul(++p, '/');
-		pat = xstrndup(p, q - p); // save copy of pattern
+		pat = strndup(p, q - p); // save copy of pattern
 		p = q;
 		if (*p == '/')
 			p++;
@@ -1283,7 +1275,7 @@ static void colon(char *buf)
 		if (args[0]) {
 			// user wants a new filename
 			free(current_filename);
-			current_filename = xstrdup(args);
+			current_filename = strdup(args);
 		}
 	} else if (strncasecmp(cmd, "features", i) == 0) {	// what features are available
 		// print out values of all features
@@ -3599,7 +3591,7 @@ repeat:
 		// and let it be re-executed.
 		if (lmc_len > 0) {
 			last_modifying_cmd[lmc_len] = 0;
-			ioq = ioq_start = xstrdup(last_modifying_cmd);
+			ioq = ioq_start = strdup(last_modifying_cmd);
 		}
 		break;
 #endif
@@ -3613,7 +3605,7 @@ repeat:
 			break;	// bail out if user erased the entire pattern
 		if (q[1]) { // strlen(q) > 1: new pat- save it and find
 			free(last_search_pattern);
-			last_search_pattern = xstrdup(q);
+			last_search_pattern = strdup(q);
 		    goto findNormal;	// new pattern determines search direction
 		}  //Reuse pattern. If c=='?', search in direction opposite pattern's
 		if (c == '/')
