@@ -1976,7 +1976,69 @@ static char *char_insert(char *p, char c) // insert the char c at 'p'
     char *sp; // "save p"
 
     if (c == 13)
-      c = '\n';              // translate \r to \n
+      c = '\n'; // translate \r to \n
+
+    if (cmd_mode == CMODE_INSERT) {
+      // If a matching closer is already at dot, step over it.
+      if ((c == ')' || c == '}') && p < end && *p == c) {
+        return p + 1;
+      }
+
+      // Expand "{<enter>" into a block with one extra indentation level.
+      if (c == '\n' && p > text && p[-1] == '{') {
+        char *line_start = begin_line(p);
+        char *indent_end = line_start;
+        char *base_indent = NULL;
+        char *inner_cursor;
+        int has_tab_indent = 0;
+        int has_closing_brace = (p < end && *p == '}');
+        int base_indent_len;
+        int i;
+
+        while (indent_end < end && (*indent_end == ' ' || *indent_end == '\t')) {
+          if (*indent_end == '\t')
+            has_tab_indent = 1;
+          indent_end++;
+        }
+        base_indent_len = indent_end - line_start;
+        if (base_indent_len > 0) {
+          base_indent = xmalloc(base_indent_len);
+          memcpy(base_indent, line_start, base_indent_len);
+        }
+
+        p = stupid_insert(p, '\n');
+        for (i = 0; i < base_indent_len; i++) {
+          p = stupid_insert(p, base_indent[i]);
+        }
+        if (has_tab_indent) {
+          p = stupid_insert(p, '\t');
+        } else {
+          for (i = 0; i < tabstop; i++) {
+            p = stupid_insert(p, ' ');
+          }
+        }
+        inner_cursor = p;
+
+        p = stupid_insert(p, '\n');
+        for (i = 0; i < base_indent_len; i++) {
+          p = stupid_insert(p, base_indent[i]);
+        }
+        if (!has_closing_brace) {
+          p = stupid_insert(p, '}');
+        }
+        free(base_indent);
+        return inner_cursor;
+      }
+
+      // Auto-insert matching closer for common coding delimiters.
+      if (c == '(' || c == '{') {
+        char closer = (c == '(') ? ')' : '}';
+        p = stupid_insert(p, c);
+        p = stupid_insert(p, closer);
+        return p - 1;
+      }
+    }
+
     sp = p;                  // remember addr of insert
     p = stupid_insert(p, c); // insert the char
 #if ENABLE_FEATURE_VI_SETOPTS
